@@ -2,13 +2,6 @@ import {Injectable} from '@nestjs/common';
 import * as dotenv from 'dotenv';
 import * as fs from 'fs'
 import axios from 'axios';
-
-function filterById(jsonObject, id) {
-    return jsonObject.filter(function (jsonObject) {
-        return (jsonObject['field_id'] == id);
-    })[0];
-}
-
 dotenv.config();
 
 @Injectable()
@@ -25,29 +18,32 @@ export class AmoService {
     private refreshToken: string | null = null;
     private expiresIn: number | null = null;
 
+//получение токена и различные проверки
     async getAccessToken(): Promise<string> {
+        //проверка на наличие файла с refresh_token`ом
         if (fs.existsSync(this.token_file_path) && !this.is_set_access_token()) {
             this.refreshToken = fs.readFileSync(this.token_file_path).toString();
             await this.refreshAccessToken();
             return this.accessToken;
         }
+        //проверка на существование access_token`а
         if (this.is_set_access_token()) {
+            //проверка на жизнеспособность токена и получение нового, если этот не живой
             if (Date.now() >= this.expiresIn) {
                 await this.refreshAccessToken();
             }
         } else {
             await this.getRefreshToken()
-
         }
         return this.accessToken;
     }
-
+//метод для проверки токенов на существования
     is_set_access_token(): boolean {
         return (this.accessToken != null && this.refreshToken != null);
     }
-
+//метод для получения refresh token`а при помощи authorization code
     async getRefreshToken(): Promise<any> {
-        const tokenUrl = `https://${process.env.SUBDOMAIN}.amocrm.ru/oauth2/access_token`; // Замените subdomain
+        const tokenUrl = `https://${process.env.SUBDOMAIN}.amocrm.ru/oauth2/access_token`;
         const requestBody = {
             client_id: this.clientId,
             client_secret: this.clientSecret,
@@ -61,6 +57,7 @@ export class AmoService {
             let data = response.data;
             this.accessToken = data.access_token;
             this.refreshToken = data.refresh_token;
+            //получение нового refresh токена и запись его в файл(файл создается, если не был найден)
             fs.writeFileSync(this.token_file_path, this.refreshToken, {flag: 'w'})
             this.expiresIn = Date.now() + data.expires_in;
         } catch (error) {
@@ -68,7 +65,7 @@ export class AmoService {
             throw error;
         }
     }
-
+//Получение нового access и refresh token`a при помощи старого refresh token`a
     async refreshAccessToken(): Promise<any> {
         if (!this.refreshToken) {
             throw new Error('Refresh token is missing.');
@@ -96,7 +93,7 @@ export class AmoService {
         }
 
     }
-
+//Метод для получения и обработки данных контакта
     async processAmoData(name: string, email: string, phone: string): Promise<string> {
         const contactUrlphone = `${this.amoApiUrl}/contacts?query=${phone}`;
         const contactUrlemail = `${this.amoApiUrl}/contacts?query=${email}`;
@@ -105,6 +102,7 @@ export class AmoService {
                 Authorization: `Bearer ${this.accessToken}`,
             },
         };
+        //Очень кривая проверка на полученные http коды
         let contactResponse = await axios.get(contactUrlphone, header);
         let contactResponse2 = await axios.get(contactUrlemail, header);
         if (contactResponse.status == 200 || contactResponse2.status == 200) {
@@ -136,9 +134,8 @@ export class AmoService {
                 try {
                     await axios.patch(`${this.amoApiUrl}/contacts/${contactResponse.data['_embedded']['contacts'][0]['id']}`, contactResponse.data['_embedded']['contacts'][0], header)
                     return contactResponse.data['_embedded']['contacts'][0]
-                }
-                catch (e) {
-                    return  e.response.data;
+                } catch (e) {
+                    return e.response.data;
                 }
             }
         } else {
@@ -163,7 +160,7 @@ export class AmoService {
                         ]
                     }]
                     try {
-                       let response= await axios.post(`${this.amoApiUrl}/contacts`, requestBody, header);
+                        let response = await axios.post(`${this.amoApiUrl}/contacts`, requestBody, header);
                         return response.data['_embedded']['contacts'][0]
                     } catch (e) {
                         return e.response ? e.response.data : e.message
@@ -180,5 +177,4 @@ export class AmoService {
         }
     }
 
-    // Другие методы для работы с AmoCRM...
 }
